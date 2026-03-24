@@ -1,13 +1,22 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import Base
 
-# Using SQLite for local development (zero config)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./syntrax.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+if DATABASE_URL:
+    # Production: PostgreSQL (Neon / Vercel Postgres)
+    # Fix legacy postgres:// prefix
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(DATABASE_URL)
+else:
+    # Development: SQLite (zero config)
+    engine = create_engine(
+        "sqlite:///./syntrax.db", connect_args={"check_same_thread": False}
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

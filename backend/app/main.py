@@ -49,9 +49,10 @@ import os
 # Initialize Database
 init_db()
 
-# Mount Static Files for serving images
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Mount Static Files for serving images (dev only — Vercel Blob used in production)
+if not os.getenv("VERCEL") and not os.getenv("BLOB_READ_WRITE_TOKEN"):
+    os.makedirs("uploads", exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(documents.router)
 app.include_router(admin.router)

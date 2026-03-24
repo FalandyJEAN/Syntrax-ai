@@ -6,9 +6,11 @@ from pydantic import BaseModel
 import shutil
 import os
 import uuid
+import requests as http_requests
 from app.database import get_db, SessionLocal
 from app import models
 from app.services.openrouter_service import openrouter_service
+from app.services import blob_service
 from app.repositories.document import DocumentRepository
 from app.dependencies import verify_api_key, get_current_user
 
@@ -65,9 +67,14 @@ def process_document_core(doc_id: str, db: Session) -> Dict[str, Any]:
     repo.update_status(doc_id, models.DocStatus.processing)
     
     try:
-        # Read file
-        with open(doc.file_url, "rb") as f:
-            file_content = f.read()
+        # Read file — support local path or remote Blob URL
+        if doc.file_url.startswith("http"):
+            r = http_requests.get(doc.file_url, timeout=30)
+            r.raise_for_status()
+            file_content = r.content
+        else:
+            with open(doc.file_url, "rb") as f:
+                file_content = f.read()
         
         # Call AI extraction
         result = openrouter_service.extract_from_file(
@@ -281,32 +288,39 @@ async def upload_document(
     file_uuid = str(uuid.uuid4())
     extension = os.path.splitext(file.filename)[1]
     saved_filename = f"{file_uuid}{extension}"
-    
-    # Save file
-    os.makedirs("uploads", exist_ok=True)
-    file_path = os.path.join("uploads", saved_filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
+
+    file_bytes = await file.read()
+
+    # Save to /tmp for background processing
+    tmp_path = f"/tmp/{saved_filename}"
+    with open(tmp_path, "wb") as f:
+        f.write(file_bytes)
+
+    # Determine permanent storage URL
+    if blob_service.is_enabled():
+        file_url = blob_service.upload(file_bytes, saved_filename) or tmp_path
+    else:
+        os.makedirs("uploads", exist_ok=True)
+        local_path = os.path.join("uploads", saved_filename)
+        with open(local_path, "wb") as f:
+            f.write(file_bytes)
+        file_url = f"uploads/{saved_filename}"
+
     mock_org_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "mock-org")
     mock_org_id = str(mock_org_uuid)
-    
-    # Store web-accessible path (forward slashes)
-    web_path = f"uploads/{saved_filename}"
-    
+
     repo = DocumentRepository(db)
-    
+
     new_doc = repo.create(
         file_name=file.filename,
-        file_url=web_path,
+        file_url=file_url,
         file_uuid=file_uuid,
         org_id=mock_org_id,
         user_id=user_id
     )
-    
+
     background_tasks.add_task(process_document_background, new_doc.id)
-    
+
     return new_doc
 
 @router.post("/upload-batch")
@@ -354,23 +368,28 @@ async def upload_batch(
             file_uuid = str(uuid.uuid4())
             extension = os.path.splitext(file.filename)[1]
             saved_filename = f"{file_uuid}{extension}"
-            
-            # Save to disk
-            os.makedirs("uploads", exist_ok=True)
-            file_path = os.path.join("uploads", saved_filename)
-            
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            
+
+            file_bytes = await file.read()
+
+            tmp_path = f"/tmp/{saved_filename}"
+            with open(tmp_path, "wb") as f:
+                f.write(file_bytes)
+
+            if blob_service.is_enabled():
+                file_url = blob_service.upload(file_bytes, saved_filename) or tmp_path
+            else:
+                os.makedirs("uploads", exist_ok=True)
+                local_path = os.path.join("uploads", saved_filename)
+                with open(local_path, "wb") as f:
+                    f.write(file_bytes)
+                file_url = f"uploads/{saved_filename}"
+
             mock_org_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "mock-org")
             mock_org_id = str(mock_org_uuid)
-            
-            # Web accessible path
-            web_path = f"uploads/{saved_filename}"
-            
+
             new_doc = repo.create(
                 file_name=file.filename,
-                file_url=web_path,
+                file_url=file_url,
                 file_uuid=file_uuid,
                 org_id=mock_org_id,
                 user_id=user_id
