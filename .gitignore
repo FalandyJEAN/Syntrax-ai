@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Environment variables - NEVER commit secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (user files)
+backend/uploads/
+
+# Logs
+*.log
+backend/backend_debug.log
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.pnpm-debug.log*
+frontend/npm-debug.log*
+frontend/.vercel
+
+# TypeScript
+*.tsbuildinfo
+frontend/next-env.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug scripts (local only)
+backend/debug_*.py
+backend/test_*.py
+backend/inspect_*.py
